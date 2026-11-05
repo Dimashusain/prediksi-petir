@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AetherSense | Sistem Prediksi Petir & Cuaca Real-Time BMKG</title>
+  
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>">
+
+  <!-- Leaflet GIS Engine (Fallback Tangguh & Tanpa Kuota) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script>
+    window._gmapsCallbackCalled = false;
+    window._gmapsAuthFailed = false;
+    window.initMap = function() {
+      window._gmapsCallbackCalled = true;
+      if (typeof window._tryMountGoogleMap === 'function') {
+        window._tryMountGoogleMap();
+      }
+    };
+    window.gm_authFailure = function() {
+      window._gmapsAuthFailed = true;
+      console.warn("Google Maps Auth Failure: Maps JavaScript API belum diaktifkan di Google Cloud.");
+      if (typeof window._triggerMapFallback === 'function') {
+        window._triggerMapFallback("Google Maps API Key memerlukan aktivasi Maps JavaScript API di Google Cloud Console. Sistem beralih ke Dark GIS Radar Engine.");
+      }
+    };
+  </script>
+</head>
+<body>
+  <!-- Ambient Atmospheric Canvas -->
+  <canvas id="ambient-canvas"></canvas>
+
+  <div class="app-layout">
+    <!-- Header / Top Command Bar -->
+    <header class="top-nav">
+      <div class="brand">
+        <div class="brand-icon-wrapper">
+          <svg class="brand-lightning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="url(#brandGrad)" stroke="none"/>
+            <defs>
+              <linearGradient id="brandGrad" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#38bdf8"/>
+                <stop offset="1" stop-color="#818cf8"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="pulse-ring"></span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">AETHERSENSE <span class="brand-sub">LAB</span></div>
+          <div class="brand-subtitle">SISTEM PREDIKSI PETIR & OBSERVATORI BMKG</div>
+        </div>
+      </div>
+
+      <!-- Live Sync & Clock Center -->
+      <div class="nav-telemetry">
+        <div class="telemetry-item sync-indicator" id="sync-badge">
+          <span class="live-dot"></span>
+          <span class="sync-text">BMKG LIVE SYNC</span>
+        </div>
+        <div class="telemetry-item digital-clock">
+          <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="live-clock">--:--:-- WIB</span>
+        </div>
+        <div class="telemetry-item countdown-box" title="Waktu menuju pembaruan otomatis">
+          <svg class="icon-small icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span>Sync: <strong id="refresh-countdown">60s</strong></span>
+        </div>
+        <button id="btn-manual-sync" class="btn-icon" title="Perbarui Data Sekarang">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sub-Navbar: Region Selector & Search Filter -->
+    <section class="region-bar">
+      <div class="region-label">
+        <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>Wilayah Pantauan:</span>
+      </div>
+      
+      <!-- Quick Region Chips -->
+      <div class="region-chips-wrapper" id="region-chips-list">
+        <!-- Rendered by JS -->
+        <button class="chip-item active" data-code="31.71.01.1001">Gambir, Jakarta Pusat</button>
+      </div>
+
+      <!-- Custom ADM4 Search Bar -->
+      <form id="form-adm4-search" class="adm4-search-box">
+        <input 
+          type="text" 
+          id="input-adm4" 
+          placeholder="Kode adm4 (contoh: 31.71.01.1001)" 
+          pattern="^[0-9.]+$"
+          title="Format kode wilayah adm4 BMKG"
+          value="31.71.01.1001"
+        >
+        <button type="submit" class="btn-search" title="Cari Wilayah">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <!-- Main Dynamic Content Container -->
+    <main class="dashboard-container">
+      
+      <!-- Warning Banner if Fallback or Error -->
+      <div id="notice-banner" class="notice-banner hidden">
+        <svg class="icon-notice" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span id="notice-text">Memuat status cuaca...</span>
+      </div>
+
+      <!-- Top Dashboard Hero Section: Current Weather & Lightning Prediction Center -->
+      <section class="hero-grid">
+        
+        <!-- CARD 1: Atmospheric Overview (Large Current Condition) -->
+        <div class="card glass-card hero-weather-card">
+          <div class="card-ambient-glow"></div>
+          
+          <div class="hero-location-header">
+            <div>
+              <div class="badge-geo" id="geo-coordinates">LAT: -6.176 • LON: 106.826 • ASIA/JAKARTA</div>
+              <h1 class="geo-title" id="location-name">Gambir, Gambir</h1>
+              <p class="geo-sub" id="location-sub">Kota Adm. Jakarta Pusat, DKI Jakarta</p>
+            </div>
+            <div class="source-tag" id="source-tag">BMKG API VERIFIED</div>
+          </div>
+
+          <div class="hero-weather-main">
+            <div class="hero-temp-wrapper">
+              <span class="hero-temp-val" id="current-temp">32</span>
+              <span class="hero-temp-unit">°C</span>
+            </div>
+            <div class="hero-weather-visual">
+              <div class="weather-icon-frame">
+                <img id="current-weather-icon" src="https://api-apps.bmkg.go.id/storage/icon/cuaca/cerah%20berawan-am.svg" alt="Cuaca BMKG" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%2338bdf8\'><circle cx=\'12\' cy=\'12\' r=\'5\'/><line x1=\'12\' y1=\'1\' x2=\'12\' y2=\'3\'/><line x1=\'12\' y1=\'21\' x2=\'12\' y2=\'23\'/></svg>'">
+              </div>
+              <div class="weather-desc-badge" id="current-desc">Cerah Berawan</div>
+              <div class="weather-desc-en" id="current-desc-en">Partly Cloudy</div>
+            </div>
+          </div>
+
+          <div class="hero-footer-bar">
+            <div class="hero-timestamp">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Slot Analisis: <strong id="current-slot-time">15:00 WIB</strong></span>
+            </div>
+            <div class="hero-visibility">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span>Jarak Pandang: <strong id="current-visibility">> 10 km</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2: Lightning Risk Command Engine (Sistem Prediksi Petir) -->
+        <div class="card glass-card lightning-center-card">
+          <div class="card-ambient-glow lightning-glow"></div>
+          
+          <div class="lightning-header">
+            <div class="lightning-title-row">
+              <div class="lightning-icon-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div>
+                <h3 class="lightning-heading">Indeks Potensi Sambaran Petir</h3>
+                <span class="lightning-subtitle">Algoritma Konveksi Atmosferik & Awan Cumulonimbus</span>
+              </div>
+            </div>
+            <div id="lightning-status-badge" class="risk-pill risk-low">RENDAH</div>
+          </div>
+
+          <!-- Circular Radial Gauge Visualizer -->
+          <div class="gauge-center-wrapper">
+            <div class="gauge-visual">
+              <svg class="circular-chart" viewBox="0 0 36 36">
+                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                <path id="gauge-circle-progress" class="circle-bar" stroke-dasharray="15, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+              </svg>
+              <div class="gauge-center-content">
+                <span id="lightning-score-val" class="gauge-num">15</span>
+                <span class="gauge-unit">%</span>
+                <span class="gauge-desc">Probabilitas</span>
+              </div>
+            </div>
+
+            <!-- Lightning Risk Multi-factor Assessment -->
+            <div class="lightning-breakdown">
+              <div class="risk-factor-item">
+                <span class="rf-label">Aktivitas Konvektif:</span>
+                <div class="rf-bar-bg"><div id="bar-convective" class="rf-bar-fill" style="width: 25%"></div></div>
+                <span id="txt-convective" class="rf-val">Tenang</span>
+              </div>
+              <div class="risk-factor-item">
+                <span class="rf-label">Saturasi Muatan Uap (HU):</span>
+                <div class="rf-bar-bg"><div id="bar-moisture" class="rf-bar-fill" style="width: 59%"></div></div>
+                <span id="txt-moisture" class="rf-val">59%</span>
+              </div>
+              <div class="risk-factor-item">
+                <span class="rf-label">Kepadatan Sel Awan (TCC):</span>
+                <div class="rf-bar-bg"><div id="bar-cloud" class="rf-bar-fill" style="width: 79%"></div></div>
+                <span id="txt-cloud" class="rf-val">79%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actionable Mitigation Advisory Box -->
+          <div class="lightning-advisory-box">
+            <div class="advisory-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="advisory-text" id="lightning-advice">
+              Kondisi atmosfer stabil. Tidak terdeteksi pembentukan awan Cumulonimbus berenergi tinggi dalam radius pemantauan.
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Atmospheric Telemetry Sensors (6 Metrics Grid) -->
+      <section class="telemetry-grid">
+        
+        <!-- Metric 1: Kelembapan Relatif -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Kelembapan Udara (RH)</span>
+            <div class="sensor-icon-box cyan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="sensor-val-row">
+              <span id="sensor-hu" class="sensor-val">59</span>
+              <span class="sensor-unit">%</span>
+            </div>
+            <div class="sensor-bar"><div id="sensor-hu-bar" class="sensor-bar-inner cyan" style="width: 59%;"></div></div>
+            <span class="sensor-hint" id="sensor-hu-status">Tingkat kelembapan sejuk ideal</span>
+          </div>
+        </div>
+
+        <!-- Metric 2: Tutupan Awan (TCC) -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Tutupan Awan (TCC)</span>
+            <div class="sensor-icon-box sky">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="sensor-val-row">
+              <span id="sensor-tcc" class="sensor-val">79</span>
+              <span class="sensor-unit">%</span>
+            </div>
+            <div class="sensor-bar"><div id="sensor-tcc-bar" class="sensor-bar-inner sky" style="width: 79%;"></div></div>
+            <span class="sensor-hint" id="sensor-tcc-status">Sebagian besar langit tertutup awan</span>
+          </div>
+        </div>
+
+        <!-- Metric 3: Presipitasi / Curah Hujan -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Curah Hujan (TP)</span>
+            <div class="sensor-icon-box blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="19" x2="8" y2="21"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="16" y1="19" x2="16" y2="21"/><line x1="16" y1="13" x2="16" y2="15"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="12" y1="15" x2="12" y2="17"/><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="sensor-val-row">
+              <span id="sensor-tp" class="sensor-val">0.1</span>
+              <span class="sensor-unit">mm</span>
+            </div>
+            <div class="sensor-bar"><div id="sensor-tp-bar" class="sensor-bar-inner blue" style="width: 5%;"></div></div>
+            <span class="sensor-hint" id="sensor-tp-status">Presipitasi sangat minim / kering</span>
+          </div>
+        </div>
+
+        <!-- Metric 4: Kecepatan & Vektor Angin -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Kecepatan & Arah Angin</span>
+            <div class="sensor-icon-box indigo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="sensor-val-row">
+              <span id="sensor-ws" class="sensor-val">10.1</span>
+              <span class="sensor-unit">km/j</span>
+              <div class="compass-mini" id="compass-mini">
+                <span id="compass-needle" class="compass-needle">↑</span>
+              </div>
+            </div>
+            <div class="wind-direction-row">
+              <span class="wind-from">Dari: <strong id="sensor-wd">N (Utara)</strong></span>
+              <span class="wind-to">Menuju: <strong id="sensor-wd-to">S (Selatan)</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric 5: Jarak Pandang Atmosferik -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Jarak Pandang (VS)</span>
+            <div class="sensor-icon-box purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="sensor-val-row">
+              <span id="sensor-vs" class="sensor-val">> 10</span>
+              <span class="sensor-unit">km</span>
+            </div>
+            <div class="sensor-bar"><div id="sensor-vs-bar" class="sensor-bar-inner purple" style="width: 100%;"></div></div>
+            <span class="sensor-hint" id="sensor-vs-status">Kondisi visual sangat jernih</span>
+          </div>
+        </div>
+
+        <!-- Metric 6: Timestamp Analisis BMKG -->
+        <div class="card glass-card sensor-card">
+          <div class="sensor-header">
+            <span class="sensor-title">Waktu Observasi & UTC</span>
+            <div class="sensor-icon-box amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </div>
+          </div>
+          <div class="sensor-body">
+            <div class="utc-time-info">
+              <div class="utc-row"><span>Lokal:</span> <strong id="sensor-local-time">--</strong></div>
+              <div class="utc-row"><span>UTC:</span> <span id="sensor-utc-time">--</span></div>
+              <div class="utc-row"><span>Timezone:</span> <span id="sensor-tz">Asia/Jakarta</span></div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- SECTION: RADAR CUACA REAL-TIME & PETA SPASIAL PREDIKSI PETIR (GOOGLE MAPS GIS) -->
+      <section class="card glass-card map-section">
+        <div class="map-section-header">
+          <div class="map-header-title-box">
+            <div class="map-icon-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                <path d="M2 12h20"/>
+              </svg>
+            </div>
+            <div>
+              <div class="map-badge-row">
+                <div class="badge-radar-live">
+                  <span class="radar-live-blip"></span>
+                  <span>RADAR GIS METEOROLOGI BMKG</span>
+                </div>
+                <span id="badge-engine-type" class="badge-engine">MEMERIKSA ENGINE...</span>
+              </div>
+              <h2 class="map-section-title">Radar Cuaca Real-Time & Deteksi Sambaran Petir Spasial</h2>
+              <p class="map-section-sub">
+                Visualisasi satelit radar Doppler BMKG, jangkauan sel badai konvektif, dan estimasi titik sambaran petir di sekitar koordinat stasiun.
+              </p>
+            </div>
+          </div>
+
+          <div class="map-status-stats">
+            <div class="map-stat-item">
+              <span class="ms-label">Titik Petir Terdeteksi:</span>
+              <strong id="stat-strikes-count" class="ms-val danger">0 Titik</strong>
+            </div>
+            <div class="map-stat-item">
+              <span class="ms-label">Radius Bahaya:</span>
+              <strong id="stat-danger-radius" class="ms-val">5.0 km</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Engine Status / Notice Alert -->
+        <div id="map-engine-alert" class="map-engine-alert hidden">
+          <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span id="map-engine-alert-text">Status engine peta</span>
+        </div>
+
+        <!-- Floating Glass Search & Layer Toolbar -->
+        <div class="map-toolbar">
+          <!-- Google Places Autocomplete Input -->
+          <div class="places-search-container">
+            <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input 
+              type="text" 
+              id="places-search-input" 
+              placeholder="Cari lokasi atau nama jalan di Indonesia..." 
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- Layer Toggles -->
+          <div class="map-layer-toggles">
+            <button id="toggle-radar-layer" class="map-tool-btn active" title="Tampilkan / Sembunyikan Radar Presipitasi">
+              <span class="tool-icon">🌧️</span> Radar Doppler
+            </button>
+            <button id="toggle-lightning-layer" class="map-tool-btn active" title="Tampilkan / Sembunyikan Titik Sambaran Petir">
+              <span class="tool-icon">⚡</span> Sambaran Petir
+            </button>
+            <button id="toggle-danger-radius" class="map-tool-btn active" title="Tampilkan / Sembunyikan Perimeter Zona Bahaya">
+              <span class="tool-icon">🎯</span> Zona Bahaya
+            </button>
+            <button id="btn-recenter-map" class="map-tool-btn" title="Pusatkan Kembali Peta ke Stasiun BMKG">
+              <span class="tool-icon">📍</span> Ke Stasiun
+            </button>
+          </div>
+        </div>
+
+        <!-- Google Map Viewport with Animated Sweep Overlay -->
+        <div class="map-viewport-wrapper">
+          <div id="map" class="google-map-element"></div>
+
+          <!-- Floating Radar Playback & Controls Overlay -->
+          <div class="radar-playback-card">
+            <div class="playback-controls">
+              <button id="btn-radar-play" class="btn-play-pause" title="Putar Animasi Pergerakan Awan Radar">
+                <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg id="icon-pause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              </button>
+              <div class="radar-frame-info">
+                <span class="radar-frame-label">Frame Radar:</span>
+                <strong id="radar-frame-time">Live Terkini</strong>
+              </div>
+            </div>
+
+            <div class="radar-scrubber-bar">
+              <input type="range" id="radar-frame-slider" min="0" max="4" value="3" step="1">
+            </div>
+
+            <div class="radar-opacity-control">
+              <span>Opasitas:</span>
+              <input type="range" id="radar-opacity-slider" min="10" max="100" value="70">
+            </div>
+          </div>
+        </div>
+
+        <!-- Radar dBZ Color Scale Legend & Lightning Telemetry Details -->
+        <div class="map-footer-grid">
+          <div class="dbz-legend-box">
+            <div class="dbz-legend-title">
+              <span>Indikasi Intensitas Radar Cuaca (Doppler)</span>
+              <span class="dbz-desc">Merah = Hujan Lebat / Petir • Hijau = Rendah / Gerimis • Bening = Cerah</span>
+            </div>
+            <div class="dbz-gradient-bar"></div>
+            <div class="dbz-labels">
+              <span>Bening (Cerah)</span>
+              <span>Hijau (Potensi Rendah)</span>
+              <span>Kuning (Sedang)</span>
+              <span>Merah (Tinggi/Lebat)</span>
+              <span>Ungu (Badai Petir)</span>
+            </div>
+          </div>
+
+          <div class="lightning-strike-feed" id="lightning-strike-feed">
+            <div class="feed-header">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Feed Deteksi Sambaran Petir Real-Time (GIS Telemetry)</span>
+            </div>
+            <div class="feed-list" id="feed-strikes-list">
+              <!-- Filled by JS -->
+              <div class="feed-empty">Memantau aktivitas sambaran petir di radius 25 km...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Multi-Day Forecast Timeline (Tabbed 3-Day Breakdown) -->
+      <section class="card glass-card forecast-section">
+        <div class="forecast-header">
+          <div>
+            <h2 class="forecast-title">Rangkaian Prakiraan Cuaca Real-Time BMKG (3 Hari)</h2>
+            <p class="forecast-sub">Klik kartu jam prakiraan untuk menginspeksi parameter atmosfer & risiko petir</p>
+          </div>
+          
+          <!-- Day Selector Tabs -->
+          <div class="day-tabs-wrapper" id="day-tabs-container">
+            <button class="day-tab active" data-day="0">Hari ke-1</button>
+            <button class="day-tab" data-day="1">Hari ke-2</button>
+            <button class="day-tab" data-day="2">Hari ke-3</button>
+          </div>
+        </div>
+
+        <!-- Timeline Cards Stream -->
+        <div class="timeline-stream-wrapper" id="timeline-stream">
+          <!-- Filled by JavaScript -->
+          <div class="loading-stream">Memuat deret prakiraan BMKG...</div>
+        </div>
+      </section>
+
+      <!-- Raw JSON Data & Science Telemetry Drawer (Collapsible) -->
+      <section class="card glass-card json-drawer">
+        <button id="toggle-json-btn" class="drawer-header-btn">
+          <div class="drawer-title-row">
+            <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <span>Inspeksi Raw Payload Data BMKG (Data Science Telemetry)</span>
+          </div>
+          <span class="drawer-caret" id="drawer-caret">▼</span>
+        </button>
+        <div id="drawer-content" class="drawer-content collapsed">
+          <div class="drawer-controls">
+            <span class="drawer-meta" id="drawer-meta-info">Endpoint: /api/weather?adm4=31.71.01.1001</span>
+            <button id="btn-copy-json" class="btn-sm">Salin JSON</button>
+          </div>
+          <pre id="json-viewer" class="json-code">Memuat data...</pre>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Official BMKG Attribution & Legal Footer -->
+    <footer class="app-footer">
+      <div class="footer-content">
+        <div class="bmkg-badge">
+          <img src="https://data.bmkg.go.id/include/assets/img/logo-bmkg.svg" alt="Logo BMKG" class="bmkg-logo-img" onerror="this.style.display='none'">
+          <div>
+            <div class="bmkg-title">SUMBER DATA RESMI BMKG</div>
+            <div class="bmkg-desc">Badan Meteorologi, Klimatologi, dan Geofisika Republik Indonesia</div>
+          </div>
+        </div>
+        <p class="footer-legal">
+          Aplikasi ini mematuhi ketentuan terbuka BMKG. Seluruh data cuaca dan geolokasi bersumber dari portal terbuka 
+          <a href="https://data.bmkg.go.id/prakiraan-cuaca" target="_blank" rel="noopener">data.bmkg.go.id/prakiraan-cuaca</a>.
+          Dikembangkan untuk Sistem Prediksi Petir & Analisis Data Sains Atmosfer.
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Audio Element for subtle storm ambiance (Optional, User Toggleable) -->
+  <audio id="storm-audio" loop preload="none">
+    <!-- Web Audio synthesized or silence fallback -->
+  </audio>
+
+  <!-- Leaflet GIS Engine (Zero-Key Guaranteed Working Engine) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/js/app.js"></script>
+  <!-- Google Maps JavaScript API with Places Library -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao&libraries=places&callback=initMap" async defer></script>
+</body>
+</html>
+

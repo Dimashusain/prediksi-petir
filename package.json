@@ -1,0 +1,21 @@
+{
+  "name": "sistem-prediksi-petir-bmkg",
+  "version": "1.0.0",
+  "description": "Sistem Monitoring & Prakiraan Cuaca Real-Time dengan Prediksi Potensi Petir Terintegrasi BMKG API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "bmkg",
+    "weather",
+    "lightning-prediction",
+    "cuaca",
+    "petir",
+    "real-time"
+  ],
+  "author": "Data Science Research Team",
+  "license": "MIT"
+}
+
