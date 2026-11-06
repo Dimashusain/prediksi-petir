@@ -402,6 +402,17 @@
 
           <!-- Layer Toggles -->
           <div class="map-layer-toggles">
+            <!-- Basemap Style Switchers (Zero-Key Guaranteed) -->
+            <button id="btn-basemap-dark" class="map-tool-btn active" title="Ganti ke Tampilan Peta Dark Obsidian (Esri Canvas)">
+              <span class="tool-icon">🌙</span> Dark
+            </button>
+            <button id="btn-basemap-satellite" class="map-tool-btn" title="Ganti ke Tampilan Foto Satelit Bumi Asli (Esri World Imagery)">
+              <span class="tool-icon">🛰️</span> Satelit
+            </button>
+            <button id="btn-basemap-osm" class="map-tool-btn" title="Ganti ke Tampilan Peta Jalan (OpenStreetMap)">
+              <span class="tool-icon">🗺️</span> Jalan
+            </button>
+            <span class="toolbar-sep"></span>
             <button id="toggle-radar-layer" class="map-tool-btn active" title="Tampilkan / Sembunyikan Radar Presipitasi">
               <span class="tool-icon">🌧️</span> Radar Doppler
             </button>
@@ -545,8 +556,6 @@
   <!-- Leaflet GIS Engine (Zero-Key Guaranteed Working Engine) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="/js/app.js"></script>
-  <!-- Google Maps JavaScript API with Places Library -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
 

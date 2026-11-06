@@ -595,12 +595,14 @@
   }
 
   /**
-   * 8. Dual-Engine Map Architecture (Google Maps API + Fallback Dark GIS Radar Engine)
+   * 8. High-Performance Multi-Basemap GIS Engine (Zero-Key Guaranteed)
    */
   const mapState = {
-    engine: 'none', // 'google' | 'leaflet'
+    engine: 'leaflet', // Default Leaflet agar instan tanpa error kuota/key
     googleMap: null,
     leafletMap: null,
+    activeBasemap: 'dark', // 'dark' | 'satellite' | 'osm'
+    leafletTileLayers: [],
     stationMarker: null,
     dangerCircle: null,
     watchCircle: null,
@@ -615,6 +617,32 @@
     showLightning: true,
     showDangerRadius: true,
     isMounted: false
+  };
+
+  // Definisi Provider Basemap 100% Bebas API Key & Tanpa Watermark
+  const BASEMAP_TILES = {
+    dark: [
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ' }
+      },
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 16, pane: 'overlayPane', opacity: 0.85 }
+      }
+    ],
+    satellite: [
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 18, attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics' }
+      }
+    ],
+    osm: [
+      {
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+      }
+    ]
   };
 
   // Tema Dark Obsidian Google Maps
@@ -704,21 +732,50 @@
   };
 
   /**
-   * Fallback Tangguh ke Leaflet Dark GIS & RainViewer Weather Radar
+   * Mengatur Tile Layer Basemap pada Leaflet (Zero-Key Guaranteed)
    */
-  window._triggerMapFallback = function (reason) {
-    if (mapState.engine === 'leaflet') return;
+  function setLeafletBasemap(type) {
+    if (!mapState.leafletMap || !BASEMAP_TILES[type]) return;
 
+    // Bersihkan tile layers sebelumnya
+    if (mapState.leafletTileLayers && mapState.leafletTileLayers.length > 0) {
+      mapState.leafletTileLayers.forEach(l => {
+        try { mapState.leafletMap.removeLayer(l); } catch (e) {}
+      });
+      mapState.leafletTileLayers = [];
+    }
+
+    // Pasang layer baru
+    BASEMAP_TILES[type].forEach(cfg => {
+      const layer = L.tileLayer(cfg.url, cfg.options);
+      layer.addTo(mapState.leafletMap);
+      mapState.leafletTileLayers.push(layer);
+    });
+
+    mapState.activeBasemap = type;
+
+    // Update active state pada tombol basemap
+    ['dark', 'satellite', 'osm'].forEach(t => {
+      const btn = document.getElementById(`btn-basemap-${t}`);
+      if (btn) btn.classList.toggle('active', t === type);
+    });
+  }
+
+  /**
+   * Inisialisasi Peta Utama Berbasis Leaflet GIS (Zero-Key Guaranteed & Selalu Aktif)
+   */
+  window.initLeafletEngine = function () {
     const mapContainer = document.getElementById('map');
     if (!mapContainer) return;
 
     if (!window.L) {
-      setTimeout(() => window._triggerMapFallback(reason), 300);
+      setTimeout(() => window.initLeafletEngine(), 200);
       return;
     }
 
+    if (mapState.leafletMap) return;
+
     try {
-      // Bersihkan container map dari Google Maps jika ada sisa
       mapContainer.innerHTML = '';
 
       const defaultLat = state.weatherData?.lokasi?.lat ? Number(state.weatherData.lokasi.lat) : -6.17638;
@@ -730,12 +787,8 @@
         zoomControl: true
       });
 
-      // Pasang Dark CartoDB Matter Tile Layer (Tampilan Gelap Elegan Bebas Kuota)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd',
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-      }).addTo(mapState.leafletMap);
+      // Pasang Basemap Esri Dark Canvas (100% Bebas API Key & Tanpa Watermark)
+      setLeafletBasemap(mapState.activeBasemap || 'dark');
 
       mapState.engine = 'leaflet';
       mapState.isMounted = true;
@@ -743,17 +796,13 @@
       // Update badge engine
       const engineBadge = document.getElementById('badge-engine-type');
       if (engineBadge) {
-        engineBadge.textContent = 'DARK GIS RADAR (ACTIVE)';
+        engineBadge.textContent = 'METEO GIS RADAR (ONLINE)';
         engineBadge.className = 'badge-engine gis';
       }
 
-      // Tampilkan Alert Informatif
+      // Sembunyikan alert error
       const alertBox = document.getElementById('map-engine-alert');
-      const alertText = document.getElementById('map-engine-alert-text');
-      if (alertBox && alertText) {
-        alertText.textContent = reason || "Google Maps API Key memerlukan aktivasi Maps JavaScript API di Google Cloud Console. Sistem beralih ke Dark GIS Radar Engine agar radar cuaca dan prediksi petir tetap tampil sempurna.";
-        alertBox.classList.remove('hidden');
-      }
+      if (alertBox) alertBox.classList.add('hidden');
 
       initLeafletGeocodeSearch();
       loadRadarLayers();
@@ -763,8 +812,12 @@
         updateMapWithWeatherData();
       }
     } catch (err) {
-      console.error("Gagal mengaktifkan Leaflet fallback:", err);
+      console.error("Gagal inisialisasi Leaflet Engine:", err);
     }
+  };
+
+  window._triggerMapFallback = function (reason) {
+    window.initLeafletEngine();
   };
 
   /**
@@ -1081,6 +1134,16 @@
   function setupMapControls() {
     if (setupMapControls.initialized) return;
     setupMapControls.initialized = true;
+
+    // 0. Basemap Switchers (Dark Canvas / Satelit Bumi / OSM)
+    ['dark', 'satellite', 'osm'].forEach(type => {
+      const btn = document.getElementById(`btn-basemap-${type}`);
+      if (btn) {
+        btn.addEventListener('click', () => {
+          setLeafletBasemap(type);
+        });
+      }
+    });
 
     // 1. Toggle Radar
     const btnRadar = document.getElementById('toggle-radar-layer');
@@ -1519,17 +1582,10 @@
     fetchForecastData(state.currentAdm4, true);
     initSSE();
 
-    // 1. Coba Google Maps terlebih dahulu jika siap
-    if (window._gmapsCallbackCalled || window.google?.maps) {
-      window._tryMountGoogleMap();
+    // Inisialisasi Peta Leaflet GIS secara instan (100% bebas error & tanpa kuota API key)
+    if (typeof window.initLeafletEngine === 'function') {
+      window.initLeafletEngine();
     }
-
-    // 2. Safety Watchdog: Jika dalam 2 detik Google Maps belum aktif / gagal auth, otomatis aktifkan Dark GIS Radar
-    setTimeout(() => {
-      if (mapState.engine === 'none') {
-        window._triggerMapFallback("Google Maps API Key memerlukan aktivasi 'Maps JavaScript API' di Google Cloud Console. Mengaktifkan Dark GIS Radar Engine agar peta dan radar cuaca tetap tampil.");
-      }
-    }, 2000);
   });
 
 })();
