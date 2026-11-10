@@ -1,7 +1,7 @@
 {
-  "name": "sistem-prediksi-petir-bmkg",
+  "name": "dityu-weather",
   "version": "1.0.0",
-  "description": "Sistem Monitoring & Prakiraan Cuaca Real-Time dengan Prediksi Potensi Petir Terintegrasi BMKG API",
+  "description": "DITYU Weather — Sistem Monitoring & Prakiraan Cuaca Real-Time dengan Prediksi Potensi Petir Terintegrasi BMKG API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

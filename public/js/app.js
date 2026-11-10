@@ -1,5 +1,5 @@
 /**
- * AETHERSENSE • Sistem Prediksi Petir & Cuaca Real-Time BMKG
+ * DITYU Weather • Sistem Prediksi Petir & Cuaca Real-Time BMKG
  * Client Logic, Real-Time Sync & Interactive Atmosphere Engine
  */
 

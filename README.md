@@ -1,4 +1,4 @@
-# ⚡ AetherSense — Sistem Prediksi Petir & Cuaca Real-Time BMKG
+# ⚡ DITYU Weather — Sistem Prediksi Petir & Cuaca Real-Time BMKG
 
 Aplikasi pemantauan cuaca dan prediksi potensi sambaran petir berbasis data terbuka resmi **Badan Meteorologi, Klimatologi, dan Geofisika (BMKG)**. Dirancang khusus untuk kebutuhan studi dan analisis Data Science dengan tampilan antarmuka yang elegan, berestetika tinggi (bespoke/artisan), serta tidak menggunakan template umum pasaran.
 

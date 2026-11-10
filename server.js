@@ -1,5 +1,5 @@
 /**
- * Backend Server: Sistem Prediksi Petir & Cuaca Real-Time BMKG
+ * Backend Server: DITYU Weather — Sistem Prediksi Petir & Cuaca Real-Time BMKG
  * Menggunakan Native Node.js HTTP Server (Zero External Dependencies)
  */
 
@@ -175,7 +175,7 @@ async function fetchRadarMapsData() {
     const timeoutId = setTimeout(() => controller.abort(), 4000);
     const res = await fetch('https://api.rainviewer.com/public/weather-maps.json', {
       signal: controller.signal,
-      headers: { 'User-Agent': 'AetherSense-Lightning-Predictor/1.0' }
+      headers: { 'User-Agent': 'DITYU-Weather-Lightning-Predictor/1.0' }
     });
     clearTimeout(timeoutId);
 
@@ -427,7 +427,7 @@ const server = http.createServer(async (req, res) => {
       <body>
         <h1>404 | Halaman Tidak Ditemukan</h1>
         <p>Halaman atau endpoint yang Anda cari tidak tersedia.</p>
-        <p><a href="/">Kembali ke Sistem Prediksi Petir BMKG</a></p>
+        <p><a href="/">Kembali ke DITYU Weather (BMKG)</a></p>
       </body>
       </html>
     `);
@@ -436,7 +436,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`=======================================================`);
-  console.log(`⚡ SISTEM PREDIKSI PETIR & CUACA REAL-TIME (BMKG API)`);
+  console.log(`⚡ DITYU WEATHER — SISTEM PREDIKSI PETIR & CUACA (BMKG)`);
   console.log(`=======================================================`);
   console.log(`🌐 Server aktif di : http://localhost:${PORT}`);
   console.log(`📡 API Weather     : http://localhost:${PORT}/api/weather?adm4=31.71.01.1001`);
@@ -447,7 +447,7 @@ server.listen(PORT, () => {
 
 // Penanganan Graceful Shutdown
 process.on('SIGINT', () => {
-  console.log('\nMematikan server Sistem Prediksi Petir...');
+  console.log('\nMematikan server DITYU Weather...');
   server.close(() => {
     console.log('Server berhasil dimatikan.');
     process.exit(0);
