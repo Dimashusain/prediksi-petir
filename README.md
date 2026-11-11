@@ -12,14 +12,18 @@ Aplikasi pemantauan cuaca dan prediksi potensi sambaran petir berbasis data terb
    - Mekanisme **Resilient Fallback**: jika jaringan terputus atau API sedang offline, sistem secara otomatis beralih ke data cadangan lokal tanpa membuat layar menjadi kosong/error.
    - Live Countdown Auto-Sync (pembaruan otomatis tiap 60 detik) dan tombol pemicu pembaruan instan (*Manual Sync*).
 
-2. **Algoritma Prediksi Potensi Petir (Data Science Model)**:
-   - Menghitung **Indeks Potensi Sambaran Petir (0 - 100%)** berdasarkan dinamika parameter meteorologis:
-     - Saturasi Kelembapan Relatif ($HU$)
-     - Kepadatan Tutupan Awan Cumulonimbus ($TCC$)
-     - Akumulasi Presipitasi Curah Hujan ($TP$)
-     - Geser & Kecepatan Angin ($WS$)
-     - Ketidakstabilan Konvektif Termal ($T$)
-   - Visualisasi Radial Gauge interaktif dengan status peringatan:
+2. **Integrasi Database Supabase & Algoritma Prediksi Petir Mandiri**:
+   - Terhubung langsung ke database PostgreSQL **Supabase REST API** (`xszdnejjmusxuojsnynq.supabase.co`).
+   - Mengambil koefisien matriks korelasi empiris dari tabel `weather_correlation_eda`:
+     - $r(\text{Suhu, Kelembapan}) = -0.8142$ (Fluktuasi termal dan muatan uap konvektif)
+     - $r(\text{Kelembapan, Curah Hujan}) = +0.2065$ (Saturasi pembentukan muatan air/graupel)
+     - $r(\text{Suhu, Kecepatan Angin}) = +0.3172$ (Gaya angkat geser angin permukaan)
+   - Mengintegrasikan parameter baseline dari tabel `weather_clean` dan aturan data cleaning:
+     - Ambang batas arus puncak petir: $|I_{\text{peak}}| \ge 19.0\text{ kA}$
+     - Ambang batas keandalan sensor: $\text{Sensor Uptime} > 0.90$
+   - **Perhitungan Ulang Mandiri (Recalculated Score)**:
+     Setiap data cuaca real-time BMKG dihitung ulang melalui formula Data Science Supabase sehingga menghasilkan Indeks Potensi Petir (0–100%) yang saintifik, terukur, dan tidak semata-mata bergantung pada prediksi teks BMKG.
+   - Status visual peringatan:
      - 🟢 **Rendah (0–24%)** : Atmosfer stabil, aman untuk kegiatan luar.
      - 🟡 **Waspada (25–49%)**: Potensi konveksi lokal terbentuk.
      - 🟠 **Siaga (50–74%)**  : Awan konvektif pekat, peluang petir signifikan.

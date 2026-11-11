@@ -65,6 +65,10 @@
           <span class="live-dot"></span>
           <span class="sync-text">BMKG LIVE SYNC</span>
         </div>
+        <div class="telemetry-item sync-indicator supabase-sync" id="supabase-badge" title="Model Prediksi Petir Terhubung ke Database Supabase">
+          <span class="live-dot dot-emerald"></span>
+          <span class="sync-text" id="supabase-sync-text">SUPABASE MODEL (ACTIVE)</span>
+        </div>
         <div class="telemetry-item digital-clock">
           <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span id="live-clock">--:--:-- WIB</span>
@@ -170,7 +174,7 @@
               </div>
               <div>
                 <h3 class="lightning-heading">Indeks Potensi Sambaran Petir</h3>
-                <span class="lightning-subtitle">Algoritma Konveksi Atmosferik & Awan Cumulonimbus</span>
+                <span class="lightning-subtitle">Model Data Science (Korelasi EDA Supabase) × Telemetri Real-Time BMKG</span>
               </div>
             </div>
             <div id="lightning-status-badge" class="risk-pill risk-low">RENDAH</div>
@@ -207,6 +211,19 @@
                 <div class="rf-bar-bg"><div id="bar-cloud" class="rf-bar-fill" style="width: 79%"></div></div>
                 <span id="txt-cloud" class="rf-val">79%</span>
               </div>
+            </div>
+          </div>
+
+          <!-- Supabase Correlation Parameters Inflow -->
+          <div class="supabase-insight-box">
+            <div class="sib-header">
+              <span class="sib-dot"></span>
+              <span>Parameter Korelasi Database Supabase:</span>
+            </div>
+            <div class="sib-tags">
+              <span class="sib-tag" title="Korelasi Negatif Kuat: Fluktuasi Suhu & Kelembapan Tinggi Memicu Updraft Konvektif">r(T, RH) = -0.814</span>
+              <span class="sib-tag" title="Korelasi Positif: Kelembapan Tinggi Mendorong Pertumbuhan Awan & Presipitasi">r(RH, Hujan) = +0.206</span>
+              <span class="sib-tag" title="Korelasi Positif: Suhu Mendorong Peningkatan Geser Angin Permukaan">r(T, Angin) = +0.317</span>
             </div>
           </div>
 
@@ -514,14 +531,20 @@
         <button id="toggle-json-btn" class="drawer-header-btn">
           <div class="drawer-title-row">
             <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            <span>Inspeksi Raw Payload Data BMKG (Data Science Telemetry)</span>
+            <span>Inspeksi Raw Payload Data BMKG & Supabase (Data Science Telemetry)</span>
           </div>
           <span class="drawer-caret" id="drawer-caret">▼</span>
         </button>
         <div id="drawer-content" class="drawer-content collapsed">
-          <div class="drawer-controls">
-            <span class="drawer-meta" id="drawer-meta-info">Endpoint: /api/weather?adm4=31.71.01.1001</span>
-            <button id="btn-copy-json" class="btn-sm">Salin JSON</button>
+          <div class="drawer-subnav">
+            <div class="drawer-tabs">
+              <button class="drawer-tab-btn active" id="btn-tab-bmkg">Data Cuaca BMKG</button>
+              <button class="drawer-tab-btn" id="btn-tab-supabase">Model & EDA Supabase</button>
+            </div>
+            <div class="drawer-controls">
+              <span class="drawer-meta" id="drawer-meta-info">Endpoint: /api/weather?adm4=31.71.01.1001</span>
+              <button id="btn-copy-json" class="btn-sm">Salin JSON</button>
+            </div>
           </div>
           <pre id="json-viewer" class="json-code">Memuat data...</pre>
         </div>

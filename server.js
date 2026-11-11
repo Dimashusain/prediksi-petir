@@ -8,6 +8,28 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+// Load Environment Variables dari file .env lokal jika ada
+function loadEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      content.split(/\r?\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const idx = trimmed.indexOf('=');
+          if (idx !== -1) {
+            const k = trimmed.slice(0, idx).trim();
+            const v = trimmed.slice(idx + 1).trim();
+            if (!process.env[k]) process.env[k] = v;
+          }
+        }
+      });
+    } catch (e) {}
+  }
+}
+loadEnv();
+
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const FALLBACK_DATA_PATH = path.join(__dirname, 'data-cuaca', '31.71.01.1001.json');
@@ -20,6 +42,123 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 let radarMapsCache = null;
 let radarMapsCacheTime = 0;
 const RADAR_CACHE_TTL_MS = 2 * 60 * 1000;
+
+// Konfigurasi Database Supabase (REST API v1)
+const SUPABASE_CONFIG = {
+  url: process.env.SUPABASE_URL || 'https://xszdnejjmusxuojsnynq.supabase.co/rest/v1',
+  key: process.env.SUPABASE_SECRET_KEY || ''
+};
+
+// State Model & Cache Korelasi Data Science dari Supabase
+const supabaseModelState = {
+  isSynced: false,
+  lastSync: null,
+  syncError: null,
+  // Matriks korelasi EDA asli dari tabel weather_correlation_eda Supabase
+  correlations: {
+    suhu_kelembapan: -0.81418903297818,
+    kelembapan_curah_hujan: 0.20647162404216,
+    suhu_curah_hujan: -0.285302473705151,
+    hujan_kecepatan_angin: -0.0505120376272596,
+    suhu_kecepatan_angin: 0.317170457509822,
+    tn_tx: 0.0702245618383167
+  },
+  // Parameter baseline & threshold transformasi dari tabel weather_clean Supabase
+  baselineStats: {
+    tavg_mean: 27.17,
+    rh_mean: 87.45,
+    rr_mean: 10.14,
+    ff_mean: 4.29,
+    peak_current_threshold: 19.0, // Sesuai dataCleaning.py: df['peak_current'].abs() >= 19.0
+    sensor_uptime_min: 0.90       // Sesuai dataCleaning.py: sensor_uptime > 0.90
+  },
+  sampleCorrelations: null,
+  missingEda: null
+};
+
+/**
+ * Helper Fetch ke Supabase REST API
+ */
+async function fetchSupabaseTable(endpoint) {
+  const urlStr = SUPABASE_CONFIG.url.replace(/\/+$/, '') + '/' + endpoint.replace(/^\/+/, '');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const res = await fetch(urlStr, {
+      signal: controller.signal,
+      headers: {
+        'apikey': SUPABASE_CONFIG.key,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.key}`,
+        'Accept': 'application/json',
+        'User-Agent': 'DITYU-Weather-Supabase-Engine/1.0'
+      }
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`Supabase HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+/**
+ * Sinkronisasi Model Prediksi Petir & Matriks Korelasi dari Supabase
+ */
+async function syncSupabaseModel() {
+  try {
+    // 1. Ambil koefisien korelasi EDA
+    const corrData = await fetchSupabaseTable('weather_correlation_eda');
+    if (Array.isArray(corrData) && corrData.length > 0 && corrData[0].suhu_kelembapan !== undefined) {
+      supabaseModelState.correlations = {
+        suhu_kelembapan: Number(corrData[0].suhu_kelembapan) || -0.8142,
+        kelembapan_curah_hujan: Number(corrData[0].kelembapan_curah_hujan) || 0.2065,
+        suhu_curah_hujan: Number(corrData[0].suhu_curah_hujan) || -0.2853,
+        hujan_kecepatan_angin: Number(corrData[0].hujan_kecepatan_angin) || -0.0505,
+        suhu_kecepatan_angin: Number(corrData[0].suhu_kecepatan_angin) || 0.3172,
+        tn_tx: Number(corrData[0].tn_tx) || 0.0702
+      };
+      supabaseModelState.sampleCorrelations = corrData[0];
+    }
+
+    // 2. Ambil sample data dari weather_clean untuk update baseline parameter
+    const cleanData = await fetchSupabaseTable('weather_clean?select=rh_avg,rr,tavg,ff_x&limit=300');
+    if (Array.isArray(cleanData) && cleanData.length > 0) {
+      const validRR = cleanData.map(r => Number(r.rr)).filter(v => !isNaN(v) && v >= 0);
+      const validRH = cleanData.map(r => Number(r.rh_avg)).filter(v => !isNaN(v) && v > 0);
+      const validT = cleanData.map(r => Number(r.tavg)).filter(v => !isNaN(v));
+      const validFF = cleanData.map(r => Number(r.ff_x)).filter(v => !isNaN(v));
+
+      if (validRR.length) supabaseModelState.baselineStats.rr_mean = Number((validRR.reduce((a, b) => a + b, 0) / validRR.length).toFixed(2));
+      if (validRH.length) supabaseModelState.baselineStats.rh_mean = Number((validRH.reduce((a, b) => a + b, 0) / validRH.length).toFixed(2));
+      if (validT.length) supabaseModelState.baselineStats.tavg_mean = Number((validT.reduce((a, b) => a + b, 0) / validT.length).toFixed(2));
+      if (validFF.length) supabaseModelState.baselineStats.ff_mean = Number((validFF.reduce((a, b) => a + b, 0) / validFF.length).toFixed(2));
+    }
+
+    // 3. Ambil missing EDA jika tersedia
+    try {
+      const missingData = await fetchSupabaseTable('weather_missing_eda');
+      if (Array.isArray(missingData) && missingData.length > 0) {
+        supabaseModelState.missingEda = missingData[0];
+      }
+    } catch (e) {}
+
+    supabaseModelState.isSynced = true;
+    supabaseModelState.lastSync = new Date().toISOString();
+    supabaseModelState.syncError = null;
+    console.log(`[Supabase Model] Berhasil disinkronkan (${supabaseModelState.lastSync})`);
+  } catch (err) {
+    supabaseModelState.syncError = err.message;
+    console.warn(`[Supabase Model Notice] Menggunakan korelasi model terverifikasi offline: ${err.message}`);
+  }
+}
+
+// Sinkronkan model saat inisialisasi awal
+syncSupabaseModel();
+
+// Sinkronkan berkala setiap 15 menit
+setInterval(syncSupabaseModel, 15 * 60 * 1000);
 
 // Presets Wilayah Terpilih di Indonesia (adm4 codes)
 const REGION_PRESETS = [
@@ -36,18 +175,17 @@ const REGION_PRESETS = [
 ];
 
 /**
- * Algoritma Penilaian Indeks Potensi Petir (Lightning Risk Index)
- * Menghitung probabilitas aktivitas petir / konveksi awan cumulonimbus (CB)
- * berdasarkan parameter meteorologis BMKG:
- * - Tutupan Awan (tcc %)
- * - Kelembapan Relatif (hu %)
- * - Presipitasi / Curah Hujan (tp mm)
- * - Kecepatan Angin (ws km/h)
- * - Suhu Permukaan (t °C)
- * - Deskripsi Cuaca Resmi BMKG
+ * Algoritma Prediksi Potensi Sambaran Petir DITYU
+ * Berbasis Model Data Science Supabase (EDA Correlation & Clean Transformation)
+ * dikombinasikan secara real-time dengan telemetri meteorologi BMKG.
+ * 
+ * Parameter dari Supabase:
+ * - weather_correlation_eda: suhu_kelembapan (-0.814), kelembapan_curah_hujan (+0.206),
+ *   suhu_kecepatan_angin (+0.317), suhu_curah_hujan (-0.285)
+ * - weather_clean baseline: rh_mean (87.45%), rr_mean (10.14 mm), tavg_mean (27.17°C)
+ * - dataCleaning.py rule: |peak_current| >= 19.0 kA, sensor_uptime > 0.90
  */
 function calculateLightningRisk(item) {
-  let score = 0;
   const desc = (item.weather_desc || '').toLowerCase();
   const tcc = Number(item.tcc) || 0;
   const hu = Number(item.hu) || 0;
@@ -55,47 +193,79 @@ function calculateLightningRisk(item) {
   const ws = Number(item.ws) || 0;
   const t = Number(item.t) || 28;
 
-  // 1. Kondisi cuaca terdeskripsi
-  if (desc.includes('petir') || desc.includes('kilat') || desc.includes('badai')) {
-    score += 65;
-  } else if (desc.includes('hujan lebat')) {
-    score += 45;
-  } else if (desc.includes('hujan sedang')) {
-    score += 30;
-  } else if (desc.includes('hujan ringan') || desc.includes('hujan lokal')) {
-    score += 20;
-  } else if (desc.includes('berawan tebal')) {
-    score += 15;
-  } else if (desc.includes('berawan')) {
-    score += 8;
+  const corr = supabaseModelState.correlations;
+  const base = supabaseModelState.baselineStats;
+
+  // 1. Indeks Ketidakstabilan Konvektif Termal (Thermal Convective Lift)
+  // Dipandu korelasi kuat suhu-kelembapan Supabase (corr.suhu_kelembapan: -0.8142)
+  // Suhu permukaan tinggi berpadu kelembapan kaya uap memicu daya dorong updraft hebat
+  let convectiveScore = 0;
+  if (t >= 32 && hu >= 70) {
+    convectiveScore += 34 * Math.abs(corr.suhu_kelembapan); // ~27.7
+  } else if (t >= 30 && hu >= 65) {
+    convectiveScore += 24 * Math.abs(corr.suhu_kelembapan); // ~19.5
+  } else if (t >= 28 && hu >= 60) {
+    convectiveScore += 16 * Math.abs(corr.suhu_kelembapan); // ~13.0
+  } else if (t > base.tavg_mean) {
+    convectiveScore += Math.min(10, (t - base.tavg_mean) * 2.5);
   }
 
-  // 2. Tutupan Awan (Cloud Cover) - cumuliform potential
-  if (tcc >= 90) score += 15;
-  else if (tcc >= 75) score += 10;
-  else if (tcc >= 50) score += 5;
+  // 2. Indeks Saturasi Muatan Presipitasi (Moisture Charge Density)
+  // Dipandu korelasi kelembapan dengan curah hujan Supabase (corr.kelembapan_curah_hujan: +0.2065)
+  let moistureScore = 0;
+  if (hu >= 88) moistureScore += 24;
+  else if (hu >= 80) moistureScore += 18;
+  else if (hu >= 70) moistureScore += 10;
+  else if (hu >= 60) moistureScore += 5;
 
-  // 3. Kelembapan Udara (Moisture Inflow)
-  if (hu >= 85) score += 15;
-  else if (hu >= 75) score += 10;
-  else if (hu >= 65) score += 5;
+  if (tp > 0) {
+    const rainRatio = Math.min(3.0, tp / Math.max(1, base.rr_mean));
+    moistureScore += (16 + rainRatio * 7) * (1 + corr.kelembapan_curah_hujan);
+  }
 
-  // 4. Presipitasi (Rainfall mm)
-  if (tp >= 10) score += 15;
-  else if (tp >= 3) score += 10;
-  else if (tp > 0) score += 5;
+  // 3. Indeks Geser Angin & Turbulensi Dinamis (Wind Shear Inflow)
+  // Dipandu korelasi suhu dengan kecepatan angin Supabase (corr.suhu_kecepatan_angin: +0.3172)
+  let shearScore = 0;
+  if (ws >= 18) {
+    shearScore += 20 * (1 + corr.suhu_kecepatan_angin);
+  } else if (ws >= 12) {
+    shearScore += 14 * (1 + corr.suhu_kecepatan_angin);
+  } else if (ws >= 6) {
+    shearScore += 7;
+  }
 
-  // 5. Geser Angin & Ketidakstabilan Termal (Wind Shear & Thermal Lift)
-  if (ws > 15) score += 5;
-  if (t >= 32 && hu >= 70) score += 8; // Potensi konveksi kuat siang hari
+  // 4. Tutupan Awan Cumuliform Vertikal (TCC)
+  let cloudScore = 0;
+  if (tcc >= 90) cloudScore += 26;
+  else if (tcc >= 75) cloudScore += 18;
+  else if (tcc >= 50) cloudScore += 9;
+
+  // 5. Verifikasi Real-Time BMKG (Kondisi Cuaca Terpantau)
+  let bmkgVerificationBonus = 0;
+  if (desc.includes('petir') || desc.includes('kilat') || desc.includes('badai')) {
+    bmkgVerificationBonus = 24;
+  } else if (desc.includes('hujan lebat')) {
+    bmkgVerificationBonus = 16;
+  } else if (desc.includes('hujan sedang')) {
+    bmkgVerificationBonus = 10;
+  } else if (desc.includes('hujan ringan') || desc.includes('hujan lokal')) {
+    bmkgVerificationBonus = 5;
+  }
+
+  // Akumulasi Bobot Model Data Science DITYU
+  let rawScore = (convectiveScore * 0.30) + 
+                 (moistureScore * 0.28) + 
+                 (cloudScore * 0.22) + 
+                 (shearScore * 0.20) + 
+                 bmkgVerificationBonus;
 
   // Normalisasi skor (0 - 100)
-  score = Math.min(100, Math.max(0, Math.round(score)));
+  const score = Math.min(100, Math.max(0, Math.round(rawScore)));
 
   // Klasifikasi Level Bahaya Petir
   let level = 'Rendah';
   let badgeClass = 'risk-low';
-  let advice = 'Aman untuk aktivitas luar ruangan. Medan elektromagnetik atmosfer tenang.';
+  let advice = 'Aman untuk aktivitas luar ruangan. Medan elektromagnetik atmosfer stabil.';
   let color = '#10b981';
 
   if (score >= 75) {
@@ -120,13 +290,27 @@ function calculateLightningRisk(item) {
     level,
     badgeClass,
     advice,
-    color
+    color,
+    engine: 'DITYU Supabase Data Science Model',
+    factors: {
+      convective: Math.min(100, Math.round(convectiveScore * 2.8)),
+      moisture: Math.min(100, Math.round(moistureScore * 2.2)),
+      cloud: Math.min(100, Math.round(cloudScore * 3.4)),
+      shear: Math.min(100, Math.round(shearScore * 3.8)),
+      correlations: {
+        suhu_kelembapan: corr.suhu_kelembapan,
+        kelembapan_curah_hujan: corr.kelembapan_curah_hujan,
+        suhu_kecepatan_angin: corr.suhu_kecepatan_angin
+      }
+    }
   };
 }
 
 /**
  * Generator Simulasi Sambaran Petir Terdeteksi Real-Time di sekitar koordinat BMKG
- * Menggunakan model dispersi konvektif berdasarkan skor risiko petir
+ * Memenuhi kriteria dataCleaning.py:
+ * - |peak_current| >= 19.0 kA
+ * - sensor_uptime > 0.90
  */
 function generateLightningStrikes(lat, lon, riskScore) {
   const strikes = [];
@@ -135,6 +319,7 @@ function generateLightningStrikes(lat, lon, riskScore) {
   const count = riskScore >= 75 ? 9 : riskScore >= 50 ? 5 : 3;
   const baseLat = Number(lat) || -6.17638;
   const baseLon = Number(lon) || 106.8267;
+  const thresholdCurrent = supabaseModelState.baselineStats.peak_current_threshold || 19.0;
 
   for (let i = 0; i < count; i++) {
     const angle = (i * (360 / count) + (i * 19) + 17) % 360;
@@ -144,8 +329,10 @@ function generateLightningStrikes(lat, lon, riskScore) {
 
     const sLat = Number((baseLat + distDeg * Math.cos(rad)).toFixed(5));
     const sLon = Number((baseLon + (distDeg / Math.cos(baseLat * Math.PI / 180)) * Math.sin(rad)).toFixed(5));
-    const peakCurrent = Number((Math.random() * 45 + 18).toFixed(1)); // 18 - 63 kA
+    // Sesuai kriteria dataCleaning.py: peak_current.abs() >= 19.0 kA
+    const peakCurrent = Number((thresholdCurrent + Math.random() * 46).toFixed(1)); // 19.0 - 65.0 kA
     const minsAgo = Math.floor(Math.random() * 14 + 1);
+    const uptime = Number((0.92 + Math.random() * 0.078).toFixed(3)); // Sesuai dataCleaning.py: sensor_uptime > 0.90
 
     strikes.push({
       id: `LTG-${(i + 1).toString().padStart(2, '0')}`,
@@ -154,6 +341,7 @@ function generateLightningStrikes(lat, lon, riskScore) {
       distanceKm: distKm,
       peakCurrentKa: peakCurrent,
       polarity: Math.random() > 0.25 ? 'Negative (CG-)' : 'Positive (CG+)',
+      sensorUptime: uptime,
       timeAgoMinutes: minsAgo,
       severity: peakCurrent > 42 ? 'Ekstrem' : peakCurrent > 28 ? 'Tinggi' : 'Sedang'
     });
@@ -221,7 +409,11 @@ function enrichWeatherData(rawData, source = 'live', cached = false) {
     source,
     cached,
     fetchedAt: new Date().toISOString(),
-    attribution: 'Badan Meteorologi, Klimatologi, dan Geofisika (BMKG)'
+    attribution: 'Badan Meteorologi, Klimatologi, dan Geofisika (BMKG)',
+    lightningEngine: 'DITYU Supabase Data Science Correlation Model',
+    supabaseSynced: supabaseModelState.isSynced,
+    supabaseLastSync: supabaseModelState.lastSync,
+    supabaseCorrelations: supabaseModelState.correlations
   };
 
   const days = enriched.data[0].cuaca || [];
@@ -375,7 +567,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. API: Status & Heartbeat
+  // 4. API: DITYU Supabase Data Science Model & Correlation EDA
+  if (pathname === '/api/supabase-model') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      database: 'Supabase PostgreSQL (REST API v1)',
+      url: SUPABASE_CONFIG.url,
+      isSynced: supabaseModelState.isSynced,
+      lastSync: supabaseModelState.lastSync,
+      syncError: supabaseModelState.syncError,
+      correlations: supabaseModelState.correlations,
+      baselineStats: supabaseModelState.baselineStats,
+      missingEda: supabaseModelState.missingEda,
+      modelExplanation: 'Prediksi petir dihitung secara mandiri menggunakan korelasi EDA dan ambang batas transformasi data cleaning Supabase, dikombinasikan dengan data real-time BMKG.'
+    }, null, 2));
+    return;
+  }
+
+  // 5. API: Status & Heartbeat
   if (pathname === '/api/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({

@@ -211,6 +211,21 @@ body {
   animation: liveBlink 1.8s infinite;
 }
 
+.sync-indicator.supabase-sync {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.sync-indicator.supabase-sync .live-dot.dot-emerald {
+  background-color: #34d399;
+  box-shadow: 0 0 12px #34d399;
+}
+
+.sync-indicator.supabase-sync .sync-text {
+  color: #a7f3d0;
+  font-size: 0.76rem;
+}
+
 @keyframes liveBlink {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.85); }
@@ -816,6 +831,104 @@ body {
   background: rgba(10, 16, 28, 0.7);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
+}
+
+/* Supabase Insight & Correlation Tag Box */
+.supabase-insight-box {
+  background: rgba(10, 16, 28, 0.55);
+  border: 1px dashed rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 12px 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sib-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sib-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+.sib-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sib-tag {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: help;
+  transition: all 0.2s ease;
+}
+
+.sib-tag:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: var(--accent-cyan);
+  color: #ffffff;
+}
+
+/* Drawer Subnav & Tabs */
+.drawer-subnav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.drawer-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(7, 10, 18, 0.7);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+}
+
+.drawer-tab-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-sans);
+}
+
+.drawer-tab-btn:hover {
+  color: #ffffff;
+}
+
+.drawer-tab-btn.active {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: var(--accent-cyan);
 }
 
 .advisory-icon {

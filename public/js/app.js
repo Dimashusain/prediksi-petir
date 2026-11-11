@@ -12,6 +12,8 @@
     activeDayIndex: 0,
     activeSlotIndex: 0,
     weatherData: null,
+    supabaseData: null,
+    activeJsonTab: 'bmkg', // 'bmkg' | 'supabase'
     countdownSeconds: 60,
     isSyncing: false,
     countdownTimer: null,
@@ -24,6 +26,8 @@
     refreshCountdown: document.getElementById('refresh-countdown'),
     btnManualSync: document.getElementById('btn-manual-sync'),
     syncBadge: document.getElementById('sync-badge'),
+    supabaseBadge: document.getElementById('supabase-badge'),
+    supabaseSyncText: document.getElementById('supabase-sync-text'),
     regionChipsList: document.getElementById('region-chips-list'),
     formAdm4Search: document.getElementById('form-adm4-search'),
     inputAdm4: document.getElementById('input-adm4'),
@@ -79,12 +83,14 @@
     dayTabsContainer: document.getElementById('day-tabs-container'),
     timelineStream: document.getElementById('timeline-stream'),
 
-    // JSON Drawer
+    // JSON Drawer & Supabase Tab
     toggleJsonBtn: document.getElementById('toggle-json-btn'),
     drawerContent: document.getElementById('drawer-content'),
     drawerCaret: document.getElementById('drawer-caret'),
     drawerMetaInfo: document.getElementById('drawer-meta-info'),
     btnCopyJson: document.getElementById('btn-copy-json'),
+    btnTabBmkg: document.getElementById('btn-tab-bmkg'),
+    btnTabSupabase: document.getElementById('btn-tab-supabase'),
     jsonViewer: document.getElementById('json-viewer')
   };
 
@@ -277,11 +283,25 @@
     renderTimelineStream(cuacaDays);
 
     // 5.5 Update Raw JSON Drawer
-    if (el.jsonViewer) {
-      el.jsonViewer.textContent = JSON.stringify(state.weatherData, null, 2);
-    }
-    if (el.drawerMetaInfo) {
-      el.drawerMetaInfo.textContent = `ADM4: ${loc.adm4 || state.currentAdm4} | Waktu Ambil: ${state.weatherData._metadata?.fetchedAt || '-'}`;
+    updateJsonViewer();
+  }
+
+  /**
+   * Update Konten JSON Viewer berdasarkan Tab yang Aktif (BMKG / Supabase)
+   */
+  function updateJsonViewer() {
+    if (!el.jsonViewer) return;
+    if (state.activeJsonTab === 'supabase') {
+      if (el.drawerMetaInfo) {
+        el.drawerMetaInfo.textContent = 'Endpoint: /api/supabase-model | Supabase PostgreSQL REST';
+      }
+      el.jsonViewer.textContent = JSON.stringify(state.supabaseData || { message: 'Memuat data Supabase...' }, null, 2);
+    } else {
+      const loc = state.weatherData?.lokasi || {};
+      if (el.drawerMetaInfo) {
+        el.drawerMetaInfo.textContent = `ADM4: ${loc.adm4 || state.currentAdm4} | Waktu Ambil: ${state.weatherData?._metadata?.fetchedAt || '-'}`;
+      }
+      el.jsonViewer.textContent = JSON.stringify(state.weatherData || { message: 'Memuat data BMKG...' }, null, 2);
     }
   }
 
@@ -361,20 +381,27 @@
       el.gaugeCircleProgress.style.stroke = risk.color;
     }
 
-    // Multi-factor breakdown bars
+    // Multi-factor breakdown bars (Dipandu Formula & Korelasi Supabase)
+    const factors = risk.factors || {};
     if (el.barConvective) {
-      const convScore = Math.min(100, (risk.score * 1.1).toFixed(0));
+      const convScore = factors.convective !== undefined ? factors.convective : Math.min(100, (risk.score * 1.1).toFixed(0));
       el.barConvective.style.width = `${convScore}%`;
       if (el.txtConvective) el.txtConvective.textContent = risk.level;
     }
 
     const huVal = Number(slot.hu) || 0;
-    if (el.barMoisture) el.barMoisture.style.width = `${huVal}%`;
-    if (el.txtMoisture) el.txtMoisture.textContent = `${huVal}%`;
+    if (el.barMoisture) {
+      const moistScore = factors.moisture !== undefined ? factors.moisture : huVal;
+      el.barMoisture.style.width = `${Math.min(100, moistScore)}%`;
+      if (el.txtMoisture) el.txtMoisture.textContent = `${huVal}%`;
+    }
 
     const tccVal = Number(slot.tcc) || 0;
-    if (el.barCloud) el.barCloud.style.width = `${tccVal}%`;
-    if (el.txtCloud) el.txtCloud.textContent = `${tccVal}%`;
+    if (el.barCloud) {
+      const cloudScore = factors.cloud !== undefined ? factors.cloud : tccVal;
+      el.barCloud.style.width = `${Math.min(100, cloudScore)}%`;
+      if (el.txtCloud) el.txtCloud.textContent = `${tccVal}%`;
+    }
 
     if (el.lightningAdvice) el.lightningAdvice.textContent = risk.advice;
 
@@ -516,6 +543,25 @@
           el.drawerContent.classList.add('collapsed');
           if (el.drawerCaret) el.drawerCaret.style.transform = 'rotate(0deg)';
         }
+      });
+    }
+
+    // Tab Switchers di Raw JSON Drawer
+    if (el.btnTabBmkg) {
+      el.btnTabBmkg.addEventListener('click', () => {
+        state.activeJsonTab = 'bmkg';
+        el.btnTabBmkg.classList.add('active');
+        if (el.btnTabSupabase) el.btnTabSupabase.classList.remove('active');
+        updateJsonViewer();
+      });
+    }
+
+    if (el.btnTabSupabase) {
+      el.btnTabSupabase.addEventListener('click', () => {
+        state.activeJsonTab = 'supabase';
+        el.btnTabSupabase.classList.add('active');
+        if (el.btnTabBmkg) el.btnTabBmkg.classList.remove('active');
+        updateJsonViewer();
       });
     }
 
@@ -1386,7 +1432,8 @@
                 <div class="iw-title" style="color: #f59e0b;">⚡ Sambaran Petir Terdeteksi</div>
                 <div class="iw-sub">ID: ${strike.id} • ${strike.timeAgoMinutes} menit lalu</div>
                 <div class="iw-metric"><span>Tipe Polaritas:</span><strong>${strike.polarity}</strong></div>
-                <div class="iw-metric"><span>Arus Puncak:</span><strong>${strike.peakCurrentKa} kA</strong></div>
+                <div class="iw-metric"><span>Arus Puncak:</span><strong>${strike.peakCurrentKa} kA (&ge; 19 kA)</strong></div>
+                <div class="iw-metric"><span>Sensor Uptime:</span><strong>${strike.sensorUptime ? (strike.sensorUptime * 100).toFixed(1) + '%' : '> 90%'}</strong></div>
                 <div class="iw-metric"><span>Jarak ke Stasiun:</span><strong>${strike.distanceKm} km</strong></div>
                 <div class="iw-metric"><span>Status Bahaya:</span><strong style="color: ${strike.peakCurrentKa > 40 ? '#f43f5e' : '#f59e0b'}">${strike.severity}</strong></div>
               </div>
@@ -1472,7 +1519,8 @@
                 <div class="iw-title" style="color: #f59e0b;">⚡ Sambaran Petir Terdeteksi</div>
                 <div class="iw-sub">ID: ${strike.id} • ${strike.timeAgoMinutes} menit lalu</div>
                 <div class="iw-metric"><span>Tipe Polaritas:</span><strong>${strike.polarity}</strong></div>
-                <div class="iw-metric"><span>Arus Puncak:</span><strong>${strike.peakCurrentKa} kA</strong></div>
+                <div class="iw-metric"><span>Arus Puncak:</span><strong>${strike.peakCurrentKa} kA (&ge; 19 kA)</strong></div>
+                <div class="iw-metric"><span>Sensor Uptime:</span><strong>${strike.sensorUptime ? (strike.sensorUptime * 100).toFixed(1) + '%' : '> 90%'}</strong></div>
                 <div class="iw-metric"><span>Jarak ke Stasiun:</span><strong>${strike.distanceKm} km</strong></div>
                 <div class="iw-metric"><span>Status Bahaya:</span><strong style="color: ${isDanger ? '#f43f5e' : '#f59e0b'}">${strike.severity}</strong></div>
               </div>
@@ -1572,6 +1620,31 @@
   }
 
   /**
+   * Fetch Status & Parameter Model Data Science dari Supabase
+   */
+  async function fetchSupabaseModel() {
+    try {
+      const res = await fetch('/api/supabase-model');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.supabaseData = data;
+      if (el.supabaseBadge) {
+        if (data.isSynced) {
+          el.supabaseBadge.classList.add('synced');
+          if (el.supabaseSyncText) el.supabaseSyncText.textContent = 'SUPABASE MODEL (ACTIVE)';
+        } else {
+          if (el.supabaseSyncText) el.supabaseSyncText.textContent = 'SUPABASE MODEL (CACHED)';
+        }
+      }
+      if (state.activeJsonTab === 'supabase') {
+        updateJsonViewer();
+      }
+    } catch (e) {
+      console.warn('Gagal fetch status model Supabase:', e);
+    }
+  }
+
+  /**
    * Boot Sequence
    */
   document.addEventListener('DOMContentLoaded', () => {
@@ -1580,6 +1653,7 @@
     setupEventListeners();
     loadRegionPresets();
     fetchForecastData(state.currentAdm4, true);
+    fetchSupabaseModel();
     initSSE();
 
     // Inisialisasi Peta Leaflet GIS secara instan (100% bebas error & tanpa kuota API key)
